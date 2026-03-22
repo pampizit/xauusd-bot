@@ -342,6 +342,27 @@ def detect_bos(candles, lb=5):
     if last["close"] < min(c["low"]  for c in prev): return "BEAR"
     return None
 
+def detect_bos_m15(lb=5):
+    """Deteksi BOS di timeframe M15"""
+    candles = state["candles_m15"]
+    if len(candles) < lb+2: return None
+    rec = candles[-(lb+1):]
+    last, prev = rec[-1], rec[:-1]
+    if last["close"] > max(c["high"] for c in prev): return "BULL"
+    if last["close"] < min(c["low"]  for c in prev): return "BEAR"
+    return None
+
+def get_m15_status():
+    """Ambil status BOS M15 untuk display"""
+    bos = state.get("bos_m15")
+    t   = state.get("bos_m15_time")
+    if not bos: return "⏳ Belum ada BOS M15"
+    time_str = t.strftime("%H:%M") if t else ""
+    if bos == "BULL":
+        return f"📈 BULLISH BOS M15 ({time_str} WITA)"
+    else:
+        return f"📉 BEARISH BOS M15 ({time_str} WITA)"
+
 # ── 🌙 ASTROLOGI ──────────────────────────────────────────
 def get_moon_phase():
     now = datetime.now(timezone.utc)
@@ -542,6 +563,9 @@ def send_weekly_briefing(price):
 # ── State ─────────────────────────────────────────────────
 state = {
     "candles":[],"cur_candle":None,"prev_price":None,
+    # M15 candles
+    "candles_m15":[],"cur_candle_m15":None,
+    "bos_m15":None,"bos_m15_time":None,
     "asia_lo":None,"asia_hi":None,"fib":None,"fib_locked":False,
     "buy_done":False,"sell_done":False,"buy2_done":False,
     "alerted":set(),"sr_alerted":set(),"pattern_alerted":set(),
@@ -558,7 +582,9 @@ def reset_daily():
         "asia_lo":None,"asia_hi":None,"fib":None,"fib_locked":False,
         "buy_done":False,"sell_done":False,"buy2_done":False,
         "alerted":set(),"sr_alerted":set(),"pattern_alerted":set(),
-        "cur_candle":None,"last_day":today,"briefing_sent":False,
+        "cur_candle":None,"cur_candle_m15":None,
+        "bos_m15":None,"bos_m15_time":None,
+        "last_day":today,"briefing_sent":False,
         "storm_alerted":False,"low_asia_swept":False,"kz_alerted":set(),
     })
 
@@ -741,6 +767,67 @@ def check_sr_and_patterns(candle, all_candles):
                     f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
                 )
 
+def process_bos_m15(bos, old_bos, price):
+    """Proses saat BOS M15 terbentuk - kirim notif"""
+    if not market_open(): return
+    moon   = get_moon_phase()
+    impact = get_moon_impact(moon["phase_en"])
+    luck   = get_luck_status()
+    sess_map = {"asia":"🌏 Asia","pre":"⏳ Pre-London",
+                "london":"🇬🇧 London","ny":"🇺🇸 New York"}
+
+    # Cek apakah M5 BOS searah
+    bos_m5 = detect_bos(state["candles"])
+    confirmation = ""
+    power = ""
+
+    if bos_m5 == bos:
+        confirmation = "✅ *M5 BOS KONFIRMASI!* → ENTRY VALID!"
+        power = "🔥🔥🔥 SANGAT KUAT"
+    else:
+        confirmation = "⏳ Tunggu M5 BOS konfirmasi dulu"
+        power = "⭐⭐ SEDANG"
+
+    # Cek fib confluence
+    fib_text = ""
+    if state["fib"]:
+        f = state["fib"]
+        if abs(price - f["f618"]) <= 15:
+            fib_text = f"\n🎯 *Dekat 61.8% Golden Ratio!* ${f['f618']:.2f}"
+            power = "🔥🔥🔥🔥 SUPER KUAT!" if bos_m5 == bos else "🔥🔥🔥 KUAT"
+
+    key = f"bos_m15_{bos}_{now_wita().strftime('%Y-%m-%d-%H-%M')}"
+    if key in state["alerted"]: return
+    state["alerted"].add(key)
+
+    emoji = "📈" if bos == "BULL" else "📉"
+    direction = "BULLISH" if bos == "BULL" else "BEARISH"
+    action = "BUY 📈" if bos == "BULL" else "SELL 📉"
+
+    send_telegram(
+        f"⚡ *BOS M15 TERBENTUK!*\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"{emoji} *{direction} BOS M15*\n"
+        f"💰 Harga: *${price:.2f}*\n"
+        f"📊 Kekuatan: {power}\n\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"*🎯 Konfirmasi M5:*\n"
+        f"{confirmation}{fib_text}\n\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"*💡 Yang harus dilakukan:*\n"
+        f"{'✅ Entry ' + action + ' sekarang!' if bos_m5 == bos else '👀 Buka chart M5'}\n"
+        f"{'✅ M15 + M5 + Fib = TRIPLE KONFIRMASI!' if bos_m5 == bos and fib_text else ''}\n"
+        f"🛡 Set SL sebelum entry!\n\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"🌏 Sesi: {sess_map.get(get_session())}\n"
+        f"🌙 {moon['phase']} | {impact['bias']}\n"
+        f"{luck['emoji']} {luck['label']}\n"
+        f"🕐 {now_wita().strftime('%H:%M:%S')} WITA\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"⚠️ _Konfirmasi di chart sebelum entry!_"
+    )
+    print(f"[BOS M15] {direction} @ ${price:.2f} | M5:{bos_m5} | Power:{power}")
+
 def process_candle(candle):
     if not market_open(): return
     sess=get_session(); all_c=state["candles"]; b=detect_bos(all_c)
@@ -807,6 +894,7 @@ def handle_commands():
                 f"/moon      → Fase bulan\n"
                 f"/astro     → Planet hari ini\n"
                 f"/listsr    → Level S&R\n"
+                f"/bos       → Status BOS M5 & M15 sekarang\n"
                 f"/patterns  → Info candle patterns\n"
                 f"/help      → Menu ini\n"
                 f"━━━━━━━━━━━━━━\n"
@@ -920,6 +1008,13 @@ def handle_commands():
             kz=get_current_killzone()
             kz_text=f"\n⏰ Killzone: {kz['emoji']} {kz['name']}" if kz else ""
             luck=get_luck_status()
+            m15_status = get_m15_status()
+            bos_m5_now = detect_bos(state["candles"])
+            m5_status  = f"📈 BULLISH" if bos_m5_now=="BULL" else f"📉 BEARISH" if bos_m5_now=="BEAR" else "⏳ Belum ada"
+            # Triple konfirmasi check
+            triple = ""
+            if state["bos_m15"] and bos_m5_now == state["bos_m15"]:
+                triple = f"\n🔥 *M15+M5 SEARAH = ENTRY VALID!*"
             send_telegram(
                 f"📊 *STATUS XAUUSD BOT*\n━━━━━━━━━━━━━━\n"
                 f"{luck['label']} | {luck['color']}\n"
@@ -932,6 +1027,10 @@ def handle_commands():
                 f"📉 SELL: {'✅' if state['sell_done'] else '⏳'} | "
                 f"🔄 BUY2: {'✅' if state['buy2_done'] else '⏳'}\n"
                 f"🌊 Swept: {'✅' if state['low_asia_swept'] else '❌'}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"📊 *BOS Status:*\n"
+                f"M15: {m15_status}\n"
+                f"M5:  {m5_status}{triple}\n"
                 f"━━━━━━━━━━━━━━\n"
                 f"🌪️ {storm['level']} ({storm['score']}/12)\n"
                 f"━━━━━━━━━━━━━━\n"
@@ -981,6 +1080,51 @@ def handle_commands():
                     for l in sup: msg.append(f"  • {l['label']}: *${l['price']:.2f}* (-{p-l['price']:.1f})")
                 send_telegram("\n".join(msg))
 
+        elif text=="/bos":
+            p = state["prev_price"] or 0
+            bos_m5  = detect_bos(state["candles"])
+            bos_m15 = state.get("bos_m15")
+            m15_t   = state.get("bos_m15_time")
+            m5_str  = f"📈 BULLISH" if bos_m5=="BULL" else f"📉 BEARISH" if bos_m5=="BEAR" else "⏳ Belum ada"
+            m15_str = f"📈 BULLISH" if bos_m15=="BULL" else f"📉 BEARISH" if bos_m15=="BEAR" else "⏳ Belum ada"
+            m15_time = m15_t.strftime("%H:%M WITA") if m15_t else "-"
+            # Power level
+            if bos_m5 and bos_m15 and bos_m5 == bos_m15:
+                power = "🔥🔥🔥🔥 SUPER KUAT — M15+M5 SEARAH!"
+                action = "✅ ENTRY VALID! BUY" if bos_m15=="BULL" else "✅ ENTRY VALID! SELL"
+            elif bos_m15:
+                power = "⭐⭐⭐ KUAT — Tunggu M5 konfirmasi"
+                action = f"⏳ Tunggu M5 BOS {'BULL' if bos_m15=='BULL' else 'BEAR'}"
+            elif bos_m5:
+                power = "⭐⭐ SEDANG — M5 saja, belum M15"
+                action = "⚠️ Hati-hati, belum dikonfirmasi M15"
+            else:
+                power = "⏳ Belum ada BOS"
+                action = "Tunggu BOS terbentuk"
+            fib_note = ""
+            if state["fib"] and p:
+                f = state["fib"]
+                if abs(p - f["f618"]) <= 20:
+                    fib_note = f"\n🎯 *Dekat Golden Ratio 61.8%!* ${f['f618']:.2f}"
+            send_telegram(
+                f"📊 *BOS STATUS — XAUUSD*\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💰 Harga: *${p:.2f}*\n\n"
+                f"⏱ *M15 BOS:* {m15_str}\n"
+                f"   Terbentuk: {m15_time}\n\n"
+                f"⚡ *M5 BOS:* {m5_str}\n\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💪 *Kekuatan:*\n{power}{fib_note}\n\n"
+                f"💡 *Action:*\n{action}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"📋 *Panduan:*\n"
+                f"🔥🔥🔥🔥 M15+M5 = Entry langsung\n"
+                f"⭐⭐⭐ M15 saja = Standby, tunggu M5\n"
+                f"⭐⭐ M5 saja = Skip atau hati-hati\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
+            )
+
         elif text=="/patterns":
             send_telegram(
                 f"🕯 *CANDLE PATTERNS*\n━━━━━━━━━━━━━━\n\n"
@@ -1006,10 +1150,11 @@ def main():
     print("="*50)
     moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
     send_telegram(
-        f"🚀 *XAUUSD Bot v9 — Sinarmas Edition!*\n━━━━━━━━━━━━━━\n"
+        f"🚀 *XAUUSD Bot v10 — M15 BOS Edition!*\n━━━━━━━━━━━━━━\n"
         f"📡 gold-api.com | 📊 M5 | 🕐 WITA\n\n"
         f"*Fitur:*\n"
         f"⏰ Killzone Alert otomatis (WITA)\n"
+        f"📊 BOS M15 + M5 dual filter\n"
         f"🕯 Candle Pattern 3 Tier\n"
         f"🌪️ Perfect Storm detection\n"
         f"🌊 London Sweep Low Asia\n"
