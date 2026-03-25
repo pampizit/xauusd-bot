@@ -700,35 +700,8 @@ def check_sr_and_patterns(candle, all_candles):
                 f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
             )
 
-    # Candle Patterns
-    patterns=analyze_candle(all_candles)
-    if patterns:
-        sr_levels=get_auto_sr(all_candles,price)
-        key_levels=[sr["price"] for sr in sr_levels]
-        if state.get("fib"):
-            key_levels.extend([state["fib"]["f618"],state["fib"]["f382"],state["fib"]["f0"],state["fib"]["f100"]])
-        near_level=next((lvl for lvl in key_levels if abs(price-lvl)<=SR_TOLERANCE), None)
-        moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
-        for pattern in patterns:
-            should_send=(pattern["tier"]==1) or (pattern["tier"] in [2,3] and near_level)
-            if not should_send: continue
-            pat_key=f"pat-{pattern['name']}-{now_wita().strftime('%Y-%m-%d-%H-%M')}"
-            if pat_key in state["pattern_alerted"]: continue
-            state["pattern_alerted"].add(pat_key)
-            tier_labels={1:"🔴 STRONG SIGNAL",2:"🟡 WATCH SIGNAL",3:"🟢 INFO"}
-            level_text=f"\n📍 Level: *${near_level:.2f}*" if near_level else ""
-            kz=get_current_killzone()
-            kz_text=f"\n🕐 Killzone: {kz['emoji']} {kz['name']}" if kz else ""
-            send_telegram(
-                f"{pattern['emoji']} *CANDLE PATTERN!*\n━━━━━━━━━━━━━━\n"
-                f"*{tier_labels[pattern['tier']]}*\n"
-                f"Pola: *{pattern['name']}*\n"
-                f"💰 *${price:.2f}*{level_text}{kz_text}\n\n"
-                f"📝 {pattern['desc']}\n\n💡 {pattern['action']}\n"
-                f"━━━━━━━━━━━━━━\n"
-                f"🌙 {moon['phase']} | {impact['bias']}\n"
-                f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
-            )
+    # Candle Patterns — DINONAKTIFKAN (terlalu banyak noise)
+    # Gunakan /patterns untuk cek manual
 
     # S&R
     for sr in get_auto_sr(all_candles,price):
@@ -744,28 +717,9 @@ def check_sr_and_patterns(candle, all_candles):
                 f"📏 Jarak: {abs(price-level):.1f} poin\n"
                 f"🕐 {now_wita().strftime('%H:%M:%S')} WITA\n⏳ Tunggu konfirmasi..."
             )
-        if b=="BULL" and sr_type=="support":
-            bos_key=f"bos-bull-{label}-{now_wita().strftime('%Y-%m-%d-%H-%M')}"
-            if bos_key not in state["sr_alerted"]:
-                state["sr_alerted"].add(bos_key)
-                send_telegram(
-                    f"💥 *BOS BULLISH di SUPPORT!*\n━━━━━━━━━━━━━━\n"
-                    f"📈 *KONFIRMASI BUY*\n📍 {label}: *${level:.2f}*\n"
-                    f"💰 *${price:.2f}*\n✅ BOS M5 terkonfirmasi\n"
-                    f"🎯 Target resistance terdekat\n🛡 SL: Bawah {label}\n"
-                    f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
-                )
-        elif b=="BEAR" and sr_type=="resistance":
-            bos_key=f"bos-bear-{label}-{now_wita().strftime('%Y-%m-%d-%H-%M')}"
-            if bos_key not in state["sr_alerted"]:
-                state["sr_alerted"].add(bos_key)
-                send_telegram(
-                    f"💥 *BOS BEARISH di RESISTANCE!*\n━━━━━━━━━━━━━━\n"
-                    f"📉 *KONFIRMASI SELL*\n📍 {label}: *${level:.2f}*\n"
-                    f"💰 *${price:.2f}*\n✅ BOS M5 terkonfirmasi\n"
-                    f"🎯 Target support terdekat\n🛡 SL: Atas {label}\n"
-                    f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
-                )
+        # BOS M5 di S&R — DINONAKTIFKAN
+        # Gunakan /bos untuk cek manual
+        # M15 BOS tetap aktif (lebih akurat)
 
 def process_bos_m15(bos, old_bos, price):
     """Proses saat BOS M15 terbentuk - kirim notif"""
@@ -894,7 +848,7 @@ def handle_commands():
                 f"/moon      → Fase bulan\n"
                 f"/astro     → Planet hari ini\n"
                 f"/listsr    → Level S&R\n"
-                f"/bos       → Status BOS M5 & M15 sekarang\n"
+                f"/bos       → Status BOS M15 & M5 sekarang\n"
                 f"/patterns  → Info candle patterns\n"
                 f"/help      → Menu ini\n"
                 f"━━━━━━━━━━━━━━\n"
@@ -1150,11 +1104,12 @@ def main():
     print("="*50)
     moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
     send_telegram(
-        f"🚀 *XAUUSD Bot v10 — M15 BOS Edition!*\n━━━━━━━━━━━━━━\n"
+        f"🚀 *XAUUSD Bot v11 — Clean Signal Edition!*\n━━━━━━━━━━━━━━\n"
         f"📡 gold-api.com | 📊 M5 | 🕐 WITA\n\n"
         f"*Fitur:*\n"
         f"⏰ Killzone Alert otomatis (WITA)\n"
-        f"📊 BOS M15 + M5 dual filter\n"
+        f"📊 BOS M15 (utama) + M5 filter\n"
+        f"🔕 Candle pattern & M5 BOS = silent mode\n"
         f"🕯 Candle Pattern 3 Tier\n"
         f"🌪️ Perfect Storm detection\n"
         f"🌊 London Sweep Low Asia\n"
