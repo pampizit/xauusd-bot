@@ -369,6 +369,94 @@ def send_calendar_alert():
     )
 
 
+# ── 📐 PIVOT POINT (dari jurnal 151 Trading Strategies) ──
+def calc_pivot_points(ph, pl, pc):
+    """
+    Formula dari jurnal Kakushadze & Serur (2018):
+    C = (PH + PL + PC) / 3
+    R = 2C - PL
+    S = 2C - PH
+    """
+    c  = (ph + pl + pc) / 3
+    r1 = 2*c - pl
+    s1 = 2*c - ph
+    r2 = c + (ph - pl)
+    s2 = c - (ph - pl)
+    r3 = ph + 2*(c - pl)
+    s3 = pl - 2*(ph - c)
+    return {
+        "pivot": round(c, 2),
+        "r1": round(r1, 2), "r2": round(r2, 2), "r3": round(r3, 2),
+        "s1": round(s1, 2), "s2": round(s2, 2), "s3": round(s3, 2),
+    }
+
+def get_pivot_from_candles(candles):
+    """Hitung pivot dari data candle kemarin"""
+    if len(candles) < 288: return None
+    # Ambil 288 candle terakhir = 1 hari M5
+    yesterday = candles[-288:]
+    ph = max(c["high"]  for c in yesterday)
+    pl = min(c["low"]   for c in yesterday)
+    pc = yesterday[-1]["close"]
+    return calc_pivot_points(ph, pl, pc)
+
+def get_pivot_signal(price, pivot):
+    """Signal berdasarkan pivot point"""
+    if not pivot: return None
+    p = pivot["pivot"]
+    if price > pivot["r2"]:
+        return {"signal":"STRONG SELL","emoji":"🔴🔴","desc":f"Di atas R2 ${pivot['r2']:.2f} → Overbought"}
+    elif price > pivot["r1"]:
+        return {"signal":"SELL","emoji":"🔴","desc":f"Di atas R1 ${pivot['r1']:.2f} → Cari SELL"}
+    elif price > p:
+        return {"signal":"BULLISH","emoji":"📈","desc":f"Di atas Pivot ${p:.2f} → Bias BUY"}
+    elif price > pivot["s1"]:
+        return {"signal":"BEARISH","emoji":"📉","desc":f"Di bawah Pivot ${p:.2f} → Bias SELL"}
+    elif price > pivot["s2"]:
+        return {"signal":"BUY","emoji":"🟢","desc":f"Di bawah S1 ${pivot['s1']:.2f} → Cari BUY"}
+    else:
+        return {"signal":"STRONG BUY","emoji":"🟢🟢","desc":f"Di bawah S2 ${pivot['s2']:.2f} → Oversold"}
+
+def send_pivot_briefing(price, candles):
+    """Kirim pivot point harian ke Telegram"""
+    pivot = get_pivot_from_candles(candles)
+    if not pivot:
+        print("[PIVOT] Data belum cukup")
+        return
+    signal = get_pivot_signal(price, pivot)
+    sig_text = f"{signal['emoji']} {signal['signal']}: {signal['desc']}" if signal else ""
+    moon = get_moon_phase()
+    impact = get_moon_impact(moon["phase_en"])
+    send_telegram(
+        f"📐 *PIVOT POINT HARI INI*\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💰 Harga: *${price:.2f}*\n\n"
+        f"🔴 *Resistance:*\n"
+        f"  R3: *${pivot['r3']:.2f}*\n"
+        f"  R2: *${pivot['r2']:.2f}*\n"
+        f"  R1: *${pivot['r1']:.2f}*\n\n"
+        f"⚪ *Pivot:* *${pivot['pivot']:.2f}* ← Level tengah\n\n"
+        f"🟢 *Support:*\n"
+        f"  S1: *${pivot['s1']:.2f}*\n"
+        f"  S2: *${pivot['s2']:.2f}*\n"
+        f"  S3: *${pivot['s3']:.2f}*\n\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📊 *Signal Sekarang:*\n"
+        f"{sig_text}\n\n"
+        f"💡 *Cara Pakai:*\n"
+        f"→ Harga > Pivot = Bias BUY\n"
+        f"→ Harga < Pivot = Bias SELL\n"
+        f"→ R1/R2 = Target SELL\n"
+        f"→ S1/S2 = Target BUY\n"
+        f"→ Konfirmasi dengan BOS M15!\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"🌙 {moon['phase']} | {impact['bias']}\n"
+        f"📚 Formula: Kakushadze & Serur (2018)\n"
+        f"🕐 {now_wita().strftime('%H:%M')} WITA"
+    )
+    print(f"[PIVOT] Sent: P={pivot['pivot']} R1={pivot['r1']} S1={pivot['s1']}")
+
+
 def get_luck_status(date=None):
     """Ambil status luck hari ini dari kalender Sinarmas"""
     if date is None:
@@ -820,6 +908,7 @@ def send_morning_briefing(price):
         f"🪐\n{planet_text}\n\n"
         f"⚠️ *Rules:* BOS dulu | SL wajib | R:R 1:2\n"
         f"━━━━━━━━━━━━━━\n"
+        f"💡 Ketik /pivot untuk Pivot Point hari ini\n"
         f"💡 Ketik /yield untuk US 10Y Yield update\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"Semangat! 💪🥇\n⚠️ _Bukan saran investasi_"
@@ -906,7 +995,7 @@ def reset_daily():
         "bos_m15":None,"bos_m15_time":None,
         "last_day":today,"briefing_sent":False,
         "storm_alerted":False,"low_asia_swept":False,"kz_alerted":set(),
-        "yield_alerted_today":False,"yield_checked":False,
+        "yield_alerted_today":False,"yield_checked":False,"pivot_sent":False, "pivot_sent":False,
         "news_sent_morning":False,"news_sent_afternoon":False,"calendar_sent":False,
     "news_sent_morning":False,"news_sent_afternoon":False,"calendar_sent":False,
     # Yield tracking
@@ -997,6 +1086,10 @@ def check_news_schedule():
     if now.hour==8 and 30<=now.minute<31 and not state["calendar_sent"]:
         state["calendar_sent"] = True
         send_calendar_alert()
+    # Pivot Point jam 09:05 WITA
+    if now.hour==9 and 5<=now.minute<6 and not state["pivot_sent"]:
+        state["pivot_sent"] = True
+        send_pivot_briefing(p, state["candles"])
     # News pagi jam 09:00 WITA
     if now.hour==9 and now.minute<1 and not state["news_sent_morning"]:
         state["news_sent_morning"] = True
@@ -1064,6 +1157,31 @@ def check_sr_and_patterns(candle, all_candles):
     # Candle Patterns — DINONAKTIFKAN (terlalu banyak noise)
     # Gunakan /patterns untuk cek manual
 
+    # Cek Pivot Point touch
+    pivot = get_pivot_from_candles(all_candles)
+    if pivot:
+        pivot_levels = [
+            (pivot["r3"],"R3","resistance"),(pivot["r2"],"R2","resistance"),
+            (pivot["r1"],"R1","resistance"),(pivot["pivot"],"Pivot","neutral"),
+            (pivot["s1"],"S1","support"),(pivot["s2"],"S2","support"),
+            (pivot["s3"],"S3","support"),
+        ]
+        for plevel, plabel, ptype in pivot_levels:
+            if abs(price - plevel) <= SR_TOLERANCE:
+                pk = f"pivot-{plabel}-{now_wita().strftime('%Y-%m-%d-%H')}"
+                if pk not in state["sr_alerted"]:
+                    state["sr_alerted"].add(pk)
+                    emoji = "🔴" if ptype=="resistance" else "🟢" if ptype=="support" else "⚪"
+                    signal_hint = "→ Cari SELL" if ptype=="resistance" else "→ Cari BUY" if ptype=="support" else "→ Level tengah"
+                    send_telegram(
+                        f"📐 *Harga Menyentuh {plabel.upper()}!*\n"
+                        f"━━━━━━━━━━━━━━\n"
+                        f"{emoji} Pivot {plabel}: *${plevel:.2f}*\n"
+                        f"💰 Harga: *${price:.2f}*\n"
+                        f"💡 {signal_hint}\n"
+                        f"⏳ Tunggu BOS M15 konfirmasi!\n"
+                        f"🕐 {now_wita().strftime('%H:%M:%S')} WITA"
+                    )
     # S&R
     for sr in get_auto_sr(all_candles,price):
         level,label,sr_type=sr["price"],sr["label"],sr["type"]
@@ -1210,6 +1328,7 @@ def handle_commands():
                 f"/astro     → Planet hari ini\n"
                 f"/listsr    → Level S&R\n"
                 f"/bos       → Status BOS M15 & M5 sekarang\n"
+                f"/pivot     → Pivot Point hari ini\n"
                 f"/news      → Berita gold + analisa AI\n"
                 f"/calendar  → Jadwal news hari ini\n"
                 f"/yield     → US 10Y Yield + Trump Zone\n"
@@ -1452,6 +1571,14 @@ def handle_commands():
         elif text=="/calendar":
             send_calendar_alert()
 
+        elif text=="/pivot":
+            p = state["prev_price"] or 0
+            pivot = get_pivot_from_candles(state["candles"])
+            if not pivot:
+                send_telegram("⏳ Data pivot belum cukup. Bot butuh data 1 hari penuh dulu.")
+            else:
+                send_pivot_briefing(p, state["candles"])
+
         elif text=="/yield":
             y = fetch_us10y_yield()
             if not y:
@@ -1516,13 +1643,14 @@ def main():
     print("="*50)
     moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
     send_telegram(
-        f"🚀 *XAUUSD Bot v13 — AI News Edition!*\n━━━━━━━━━━━━━━\n"
+        f"🚀 *XAUUSD Bot v14 — Pivot Point Edition!*\n━━━━━━━━━━━━━━\n"
         f"📡 gold-api.com | 📊 M5 | 🕐 WITA\n\n"
         f"*Fitur:*\n"
         f"⏰ Killzone Alert otomatis (WITA)\n"
         f"📊 BOS M15 (utama) + M5 filter\n"
         f"📰 AI News Analysis otomatis\n"
         f"📅 Economic Calendar harian\n"
+        f"📐 Pivot Point otomatis (R1/R2/R3 + S1/S2/S3)\n"
         f"🔕 Candle pattern & M5 BOS = silent mode\n"
         f"🕯 Candle Pattern 3 Tier\n"
         f"🌪️ Perfect Storm detection\n"
