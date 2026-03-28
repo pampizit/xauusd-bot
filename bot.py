@@ -457,6 +457,239 @@ def send_pivot_briefing(price, candles):
     print(f"[PIVOT] Sent: P={pivot['pivot']} R1={pivot['r1']} S1={pivot['s1']}")
 
 
+# ── 📊 MULTI-TIMEFRAME ANALYSIS ──────────────────────────
+def build_tf_candles(candles_m5, tf_minutes):
+    """Build candle timeframe dari M5"""
+    if not candles_m5: return []
+    bars_per_tf = tf_minutes // 5
+    result = []
+    for i in range(0, len(candles_m5) - bars_per_tf + 1, bars_per_tf):
+        chunk = candles_m5[i:i + bars_per_tf]
+        if len(chunk) < bars_per_tf: continue
+        result.append({
+            "open":  chunk[0]["open"],
+            "high":  max(c["high"] for c in chunk),
+            "low":   min(c["low"]  for c in chunk),
+            "close": chunk[-1]["close"],
+            "volume": len(chunk),
+        })
+    return result
+
+def calc_rsi(candles, period=14):
+    """Hitung RSI(14)"""
+    if len(candles) < period + 1: return None
+    closes = [c["close"] for c in candles[-(period+10):]]
+    gains, losses = [], []
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i-1]
+        gains.append(max(diff, 0))
+        losses.append(max(-diff, 0))
+    if len(gains) < period: return None
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
+    if avg_loss == 0: return 100.0
+    rs = avg_gain / avg_loss
+    return round(100 - (100 / (1 + rs)), 2)
+
+def calc_ema(candles, period=21):
+    """Hitung EMA"""
+    if len(candles) < period: return None
+    closes = [c["close"] for c in candles]
+    k = 2 / (period + 1)
+    ema = sum(closes[:period]) / period
+    for price in closes[period:]:
+        ema = price * k + ema * (1 - k)
+    return round(ema, 2)
+
+def calc_momentum(candles, period=10):
+    """Hitung Momentum = Close - Close[N]"""
+    if len(candles) < period + 1: return None
+    current = candles[-1]["close"]
+    past    = candles[-(period+1)]["close"]
+    return round(current - past, 2)
+
+def calc_relative_volume(candles, period=20):
+    """Relative Volume = Volume sekarang vs rata-rata"""
+    if len(candles) < period + 1: return None
+    # Pakai jumlah candle sebagai proxy volume
+    recent_vol = len(candles[-1:])  # 1 candle terbaru
+    avg_vol    = period  # rata-rata M5 = 1 per bar
+    # Hitung range candle sebagai volume proxy
+    recent_range = abs(candles[-1]["high"] - candles[-1]["low"])
+    avg_range    = sum(abs(c["high"] - c["low"]) for c in candles[-period:]) / period
+    if avg_range == 0: return 1.0
+    return round(recent_range / avg_range, 2)
+
+def get_tf_bias(candles, tf_name):
+    """Analisa bias per timeframe"""
+    if len(candles) < 15:
+        return {"tf": tf_name, "bias": "⏳", "label": "Data kurang",
+                "rsi": None, "ema": None, "mom": None, "rvol": None}
+
+    rsi  = calc_rsi(candles)
+    ema  = calc_ema(candles, 21)
+    mom  = calc_momentum(candles, 10)
+    rvol = calc_relative_volume(candles, 20)
+    price = candles[-1]["close"]
+
+    # Tentukan bias
+    bull_signals = 0
+    bear_signals = 0
+
+    if ema and price > ema: bull_signals += 1
+    elif ema and price < ema: bear_signals += 1
+
+    if rsi:
+        if rsi < 45: bear_signals += 1
+        elif rsi > 55: bull_signals += 1
+
+    if mom:
+        if mom > 0: bull_signals += 1
+        else: bear_signals += 1
+
+    if bull_signals > bear_signals:
+        bias = "📈"; label = "BULL"
+    elif bear_signals > bull_signals:
+        bias = "📉"; label = "BEAR"
+    else:
+        bias = "⚠️"; label = "NETRAL"
+
+    # RSI zone
+    rsi_label = ""
+    if rsi:
+        if rsi >= 70:   rsi_label = "🔴OB"
+        elif rsi <= 30: rsi_label = "🟢OS"
+        else:           rsi_label = f"{rsi:.0f}"
+
+    return {
+        "tf":    tf_name,
+        "bias":  bias,
+        "label": label,
+        "rsi":   rsi,
+        "rsi_label": rsi_label,
+        "ema":   ema,
+        "ema_pos": "Atas" if (ema and price > ema) else "Bawah",
+        "mom":   mom,
+        "rvol":  rvol,
+        "price": price,
+        "bull":  bull_signals,
+        "bear":  bear_signals,
+    }
+
+def get_all_tf_analysis(candles_m5):
+    """Analisa semua timeframe"""
+    tfs = [
+        ("M15",  15,  candles_m5[-200:] if len(candles_m5)>=200 else candles_m5),
+        ("H1",   60,  candles_m5[-600:] if len(candles_m5)>=600 else candles_m5),
+        ("H4",   240, candles_m5[-2000:] if len(candles_m5)>=2000 else candles_m5),
+        ("D1",   1440, candles_m5),
+        ("W1",   10080, candles_m5),
+    ]
+    results = []
+    for tf_name, tf_min, data in tfs:
+        tf_candles = build_tf_candles(data, tf_min)
+        if len(tf_candles) < 3:
+            results.append({"tf": tf_name, "bias":"⏳","label":"Data kurang",
+                           "rsi":None,"rsi_label":"?","ema":None,"ema_pos":"?",
+                           "mom":None,"rvol":None,"price":0,"bull":0,"bear":0})
+        else:
+            results.append(get_tf_bias(tf_candles, tf_name))
+    return results
+
+def get_overall_bias(tf_results):
+    """Hitung bias keseluruhan"""
+    bulls = sum(1 for r in tf_results if r["label"]=="BULL")
+    bears = sum(1 for r in tf_results if r["label"]=="BEAR")
+    total = len([r for r in tf_results if r["label"] not in ["⏳","Data kurang","NETRAL"]])
+    if total == 0: return "⏳ Data kurang", ""
+    if bulls > bears:
+        strength = "KUAT" if bulls >= 4 else "SEDANG"
+        return f"📈 BULLISH {strength} ({bulls}/{total})", "BUY di support!"
+    elif bears > bulls:
+        strength = "KUAT" if bears >= 4 else "SEDANG"
+        return f"📉 BEARISH {strength} ({bears}/{total})", "SELL di resistance!"
+    else:
+        return f"⚠️ MIXED ({bulls}B/{bears}S)", "Tunggu konfirmasi!"
+
+def send_mtf_analysis(price, candles_m5):
+    """Kirim analisa multi-timeframe"""
+    results = get_all_tf_analysis(candles_m5)
+    overall, action = get_overall_bias(results)
+    moon   = get_moon_phase()
+    impact = get_moon_impact(moon["phase_en"])
+    luck   = get_luck_status()
+    pivot  = get_pivot_from_candles(candles_m5)
+    pivot_signal = get_pivot_signal(price, pivot) if pivot else None
+
+    # Build table
+    rows = ""
+    for r in results:
+        rvol_str = f"{r['rvol']:.1f}x" if r["rvol"] else "?"
+        rvol_emoji = "🔥" if (r["rvol"] and r["rvol"]>1.5) else "💤" if (r["rvol"] and r["rvol"]<0.7) else "📊"
+        ema_str = f"{'▲' if r['ema_pos']=='Atas' else '▼'}EMA"
+        rows += (
+            f"\n`{r['tf']:4}` {r['bias']} "
+            f"RSI:{r['rsi_label']:>5} "
+            f"{ema_str} "
+            f"Vol:{rvol_emoji}{rvol_str}"
+        )
+
+    # Conflict check
+    conflict = ""
+    labels = [r["label"] for r in results if r["label"] not in ["⏳","Data kurang"]]
+    if "BULL" in labels and "BEAR" in labels:
+        bull_tfs = [r["tf"] for r in results if r["label"]=="BULL"]
+        bear_tfs = [r["tf"] for r in results if r["label"]=="BEAR"]
+        conflict = (f"\n⚠️ *Konflik TF!*\n"
+                   f"BULL: {', '.join(bull_tfs)}\n"
+                   f"BEAR: {', '.join(bear_tfs)}\n"
+                   f"→ Ikuti TF yang lebih tinggi!")
+
+    # Pivot info
+    pivot_text = ""
+    if pivot:
+        pivot_text = (f"\n\n📐 *Pivot:* ${pivot['pivot']:.2f} | "
+                     f"R1:${pivot['r1']:.2f} | S1:${pivot['s1']:.2f}")
+        if pivot_signal:
+            pivot_text += f"\n{pivot_signal['emoji']} {pivot_signal['signal']}"
+
+    # RSI oversold/overbought alerts
+    rsi_alert = ""
+    for r in results:
+        if r["rsi"]:
+            if r["rsi"] >= 70:
+                rsi_alert += f"\n🔴 {r['tf']} OVERBOUGHT (RSI {r['rsi']:.0f}) → Potensi SELL!"
+            elif r["rsi"] <= 30:
+                rsi_alert += f"\n🟢 {r['tf']} OVERSOLD (RSI {r['rsi']:.0f}) → Potensi BUY!"
+
+    send_telegram(
+        f"📊 *MULTI TIMEFRAME ANALYSIS*\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💰 Gold: *${price:.2f}*\n"
+        f"🕐 {now_wita().strftime('%H:%M')} WITA\n\n"
+        f"```\n"
+        f"TF    Bias  RSI   EMA    VOL\n"
+        f"{'─'*32}"
+        f"{rows}\n"
+        f"```\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"🎯 *Overall:* {overall}\n"
+        f"💡 {action}"
+        f"{conflict}"
+        f"{rsi_alert}"
+        f"{pivot_text}\n\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📖 *Cara Baca:*\n"
+        f"📈=Bull 📉=Bear ⚠️=Netral\n"
+        f"🔴OB=Overbought 🟢OS=Oversold\n"
+        f"▲EMA=Di atas EMA ▼EMA=Di bawah\n"
+        f"🔥Vol=Tinggi 💤Vol=Rendah\n\n"
+        f"🌙 {moon['phase']} | {impact['bias']}\n"
+        f"{luck['emoji']} {luck['label']}"
+    )
+    print(f"[MTF] Analysis sent @ ${price:.2f}")
+
+
 def get_luck_status(date=None):
     """Ambil status luck hari ini dari kalender Sinarmas"""
     if date is None:
@@ -995,7 +1228,7 @@ def reset_daily():
         "bos_m15":None,"bos_m15_time":None,
         "last_day":today,"briefing_sent":False,
         "storm_alerted":False,"low_asia_swept":False,"kz_alerted":set(),
-        "yield_alerted_today":False,"yield_checked":False,"pivot_sent":False, "pivot_sent":False,
+        "yield_alerted_today":False,"yield_checked":False,"pivot_sent":False,"mtf_sent_hour":None, "mtf_sent_hour":None, "pivot_sent":False, "mtf_sent_hour":None,
         "news_sent_morning":False,"news_sent_afternoon":False,"calendar_sent":False,
     "news_sent_morning":False,"news_sent_afternoon":False,"calendar_sent":False,
     # Yield tracking
@@ -1078,10 +1311,16 @@ def check_yield_daily():
             print(f"[YIELD] {y['yield']}% Zone:{analysis['zone']}")
 
 def check_news_schedule():
-    """Kirim news & calendar sesuai jadwal"""
+    """Kirim news, calendar & MTF sesuai jadwal"""
     now = now_wita()
     p   = state["prev_price"] or 0
     if not p: return
+    # MTF Analysis setiap 4 jam (jam 01,05,09,13,17,21 WITA)
+    if now.hour % 4 == 1 and now.minute < 1:
+        if state["mtf_sent_hour"] != now.hour:
+            state["mtf_sent_hour"] = now.hour
+            if market_open():
+                send_mtf_analysis(p, state["candles"])
     # Kalender news jam 08:30 WITA (setelah morning briefing)
     if now.hour==8 and 30<=now.minute<31 and not state["calendar_sent"]:
         state["calendar_sent"] = True
@@ -1327,6 +1566,7 @@ def handle_commands():
                 f"/moon      → Fase bulan\n"
                 f"/astro     → Planet hari ini\n"
                 f"/listsr    → Level S&R\n"
+                f"/mtf       → Multi Timeframe Analysis\n"
                 f"/bos       → Status BOS M15 & M5 sekarang\n"
                 f"/pivot     → Pivot Point hari ini\n"
                 f"/news      → Berita gold + analisa AI\n"
@@ -1571,6 +1811,14 @@ def handle_commands():
         elif text=="/calendar":
             send_calendar_alert()
 
+        elif text=="/mtf":
+            p = state["prev_price"] or 0
+            if len(state["candles"]) < 50:
+                send_telegram("⏳ Data belum cukup untuk MTF. Tunggu beberapa jam lagi.")
+            else:
+                send_telegram("⏳ Menganalisa semua timeframe... Tunggu sebentar!")
+                send_mtf_analysis(p, state["candles"])
+
         elif text=="/pivot":
             p = state["prev_price"] or 0
             pivot = get_pivot_from_candles(state["candles"])
@@ -1643,7 +1891,7 @@ def main():
     print("="*50)
     moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
     send_telegram(
-        f"🚀 *XAUUSD Bot v14 — Pivot Point Edition!*\n━━━━━━━━━━━━━━\n"
+        f"🚀 *XAUUSD Bot v15 — MTF Edition!*\n━━━━━━━━━━━━━━\n"
         f"📡 gold-api.com | 📊 M5 | 🕐 WITA\n\n"
         f"*Fitur:*\n"
         f"⏰ Killzone Alert otomatis (WITA)\n"
@@ -1651,6 +1899,8 @@ def main():
         f"📰 AI News Analysis otomatis\n"
         f"📅 Economic Calendar harian\n"
         f"📐 Pivot Point otomatis (R1/R2/R3 + S1/S2/S3)\n"
+        f"📊 MTF Analysis (M15/H1/H4/D1/W1) setiap 4 jam\n"
+        f"📈 RSI + EMA + Relative Volume per TF\n"
         f"🔕 Candle pattern & M5 BOS = silent mode\n"
         f"🕯 Candle Pattern 3 Tier\n"
         f"🌪️ Perfect Storm detection\n"
