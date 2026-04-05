@@ -1405,33 +1405,42 @@ def handle_commands():
 
         if text in ("/start","/help"):
             send_telegram(
-                f"🥇 *XAUUSD Bot — Sinarmas + Anchor Day Edition*\n━━━━━━━━━━━━━━\n"
-                f"/briefing    → Daily briefing sekarang\n"
+                f"🥇 *XAUUSD Bot — GoldAI Edition*\n━━━━━━━━━━━━━━\n"
+                f"\n🤖 *AI AGENT (ketik langsung!):*\n"
+                f"Tanya apa saja soal trading gold —\n"
+                f"langsung ketik tanpa prefix command!\n"
+                f"/tanya    → Info cara pakai GoldAI\n"
+                f"/resetai  → Reset riwayat percakapan\n"
+                f"\n━━━━━━━━━━━━━━\n📊 *ANALISA & SIGNAL:*\n"
+                f"/briefing    → Daily briefing\n"
                 f"/weekly      → Weekly briefing\n"
-                f"/luck        → Cek luck hari ini (Sinarmas)\n"
-                f"/luckmonth   → Luck calendar bulan ini\n"
-                f"/killzone    → Jadwal killzone hari ini\n"
-                f"/storm       → Perfect Storm meter\n"
-                f"/status      → Status + astro + luck\n"
-                f"/moon        → Fase bulan\n"
-                f"/astro       → Planet hari ini\n"
-                f"/listsr      → Level S&R\n"
                 f"/mtf         → Multi Timeframe Analysis\n"
-                f"/bos         → Status BOS M15 & M5 sekarang\n"
+                f"/bos         → Status BOS M15 & M5\n"
                 f"/pivot       → Pivot Point hari ini\n"
-                f"/news        → Berita gold + analisa AI\n"
+                f"/listsr      → Level Support & Resistance\n"
+                f"/storm       → Perfect Storm meter\n"
+                f"\n🗓️ *ANCHOR DAY:*\n"
+                f"/anchorday   → Analysis Anchor Day (Rabu)\n"
+                f"/kamis       → Setup entry Kamis\n"
+                f"\n📰 *NEWS & DATA:*\n"
+                f"/news        → Berita gold + AI analysis\n"
                 f"/calendar    → Jadwal news hari ini\n"
                 f"/yield       → US 10Y Yield + Trump Zone\n"
-                f"/trump       → Penjelasan Trump Yield Theory\n"
+                f"/trump       → Trump Yield Theory\n"
+                f"\n🌙 *ASTROLOGI & LUCK:*\n"
+                f"/luck        → Luck hari ini (Sinarmas)\n"
+                f"/luckmonth   → Kalender luck bulan ini\n"
+                f"/moon        → Fase bulan\n"
+                f"/astro       → Planet hari ini\n"
+                f"\n⚙️ *LAINNYA:*\n"
+                f"/killzone    → Jadwal killzone WITA\n"
                 f"/patterns    → Info candle patterns\n"
-                f"/anchorday   → 🗓️ Anchor Day analysis sekarang\n"
-                f"/kamis       → ⏰ Cek setup Kamis dari Anchor Day\n"
+                f"/status      → Status bot lengkap\n"
                 f"/help        → Menu ini\n"
                 f"━━━━━━━━━━━━━━\n"
-                f"🌅 Daily: *08:00 WITA*\n📅 Weekly: *Senin 08:30 WITA*\n"
+                f"🌅 Daily: *08:00 WITA*\n"
                 f"🗓️ Anchor Day: *Rabu 21:30 WITA* (otomatis)\n"
-                f"⏰ Kamis Setup: *Kamis 08:05 WITA* (otomatis)\n"
-                f"⏰ Killzone auto-alert WITA\n"
+                f"⏰ Entry Reminder: *Kamis 08:05 WITA* (otomatis)\n"
                 f"━━━━━━━━━━━━━━\nBot aktif 24 jam • gold-api.com"
             )
 
@@ -1658,39 +1667,306 @@ def handle_commands():
                 f"Level kunci = S&R + Fibonacci\n⚠️ Konfirmasi dengan BOS!"
             )
 
+        # ── 🤖 AI AGENT COMMANDS ─────────────────────────────────────────────
+        elif text == "/tanya":
+            send_telegram(
+                f"🤖 *GOLDAI — Gold Trading Expert*\n━━━━━━━━━━━━━━\n\n"
+                f"Halo! Saya GoldAI, asisten trading XAUUSD Anda.\n\n"
+                f"Langsung ketik pertanyaan — tidak perlu prefix /tanya.\n\n"
+                f"*Contoh pertanyaan:*\n"
+                f"• _Apakah sekarang bagus untuk entry BUY?_\n"
+                f"• _Jelaskan kondisi BOS M15 saat ini_\n"
+                f"• _Berikan analisa London session hari ini_\n"
+                f"• _Apa dampak NFP ke gold?_\n"
+                f"• _Cara entry di Anchor Day yang benar?_\n"
+                f"• _Berapa SL dan TP yang ideal sekarang?_\n\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"💡 Saya tahu kondisi pasar real-time:\n"
+                f"harga, BOS, Asia Range, Fib, Pivot, Yield, MTF\n\n"
+                f"/resetai → hapus riwayat percakapan\n"
+                f"⚠️ _Bukan saran investasi_"
+            )
+
+        elif text == "/resetai":
+            chat_id_str = str(upd.get("message", {}).get("chat", {}).get("id", CHAT_ID))
+            _ai_history.pop(chat_id_str, None)
+            send_telegram(
+                "🔄 *Riwayat percakapan AI direset.*\n\n"
+                "Mulai percakapan baru — langsung ketik pertanyaan Anda!"
+            )
+
+        # ── FREE-TEXT → GOLDAI ───────────────────────────────────────────────
+        # Semua teks yang bukan /command → dikirim ke GoldAI
+        elif not text.startswith("/"):
+            if not ANTHROPIC_KEY:
+                send_telegram(
+                    "⚠️ *GoldAI belum aktif*\n\n"
+                    "Set `ANTHROPIC_API_KEY` di Railway environment variables."
+                )
+                continue
+            chat_id_str = str(upd.get("message", {}).get("chat", {}).get("id", CHAT_ID))
+            send_typing(chat_id_str)
+            print(f"[GOLDAI] Pertanyaan: {text[:70]}...")
+            answer = ask_gold_ai(text, chat_id_str)
+            send_telegram(
+                f"🤖 *GoldAI:*\n━━━━━━━━━━━━━━\n"
+                f"{answer}\n"
+                f"━━━━━━━━━━━━━━\n"
+                f"⚠️ _Bukan saran investasi_"
+            )
+            print(f"[GOLDAI] Jawaban: {answer[:70]}...")
+
+
+# ══════════════════════════════════════════════
+# 🤖 GOLD TRADING AI AGENT
+# ══════════════════════════════════════════════
+
+# History percakapan per chat_id, max 12 pesan
+_ai_history: dict = {}
+
+AI_SYSTEM_PROMPT = """Kamu adalah XAUUSD Gold Trading Expert AI bernama "GoldAI" — asisten trading emas profesional yang cerdas, jujur, dan praktis.
+
+## KEAHLIAN UTAMA
+Kamu ahli dalam:
+- **ICT Methodology**: BOS (Break of Structure), liquidity sweep, order block, FVG, Judas Swing, displacement, market structure shift
+- **Asia Range + Fibonacci + BOS**: Metodologi inti bot ini — identifikasi range Asia (01:00–04:00 WITA), tarik Fibonacci, entry di 61.8% setelah BOS M15 konfirmasi
+- **Killzone WITA**: Asia 01:00–04:00, London 15:00–18:00 (Judas 15:00–15:30 BAHAYA), Overlap London-NY 20:00–21:30 (terkuat), NYSE 21:30–22:00
+- **Anchor Day**: Rabu = anchor, pantau rejection di resistance/support → setup entry Kamis
+- **Multi-Timeframe Analysis**: W1 → D1 → H4 → H1 (bias) → M15 (entry TF) → M5 (trigger)
+- **Pivot Point Kakushadze & Serur**: R1/R2/R3 + S1/S2/S3, konfluensi dengan Fib
+- **XAUUSD Fundamental**: DXY, US 10Y Treasury Yield, FOMC, NFP, CPI, Trump Yield Theory (81% yield turun saat masuk zona 4.3–4.5%)
+- **Risk Management**: Max 1–2% risiko per trade, R:R minimum 1:2, close 50% di TP1
+
+## METODOLOGI ENTRY BOT INI
+1. **Asia session** → catat Low & High Asia (range)
+2. **Pre-London** → tarik Fibonacci dari Low ke High Asia
+3. **London open** → HATI-HATI Judas Swing (15:00–15:30)! Tunggu sweep selesai
+4. **Entry signal**:
+   - SELL: harga uji High Asia + BOS M15 bearish + dekat 61.8%
+   - BUY: harga uji Low Asia (swept) + BOS M15 bullish + bounce 61.8%
+5. **SL**: di luar Asia range
+6. **TP1**: pivot/61.8%, **TP2**: S1/R1, **TP3**: S2/R2
+
+## ATURAN PENTING
+- BOS M15 harus ada sebelum entry — ini filter utama
+- M5 BOS sebagai trigger (konfirmasi tambahan)
+- Jangan entry saat Judas Swing (15:00–15:30 WITA)
+- NFP week / FOMC = kurangi size atau skip
+- Rabu = Anchor Day → analisis level kunci untuk setup Kamis
+- Kalender Sinarmas: Lucky Day = bisa agresif, Unlucky Day = kurangi size
+- Fase bulan: New/Full Moon = potensi reversal, Waxing = bias bullish, Waning = bias bearish
+
+## CARA MENJAWAB
+- Jawab dalam **Bahasa Indonesia** yang natural, tidak kaku
+- Selalu gunakan data pasar real-time yang disediakan di konteks
+- Berikan analisa konkret: level entry, SL, TP jika ditanya
+- Jika ada konflik antar timeframe, jelaskan dan rekomendasikan TF lebih tinggi
+- Jujur kalau kondisi tidak ideal untuk trading — lebih baik skip
+- Tidak bertele-tele, langsung ke poin
+- Gunakan angka nyata dari konteks pasar, bukan angka fiktif
+- Selalu ingatkan: ⚠️ Bukan saran investasi, gunakan judgment sendiri
+
+## BATASAN
+- Kamu tidak bisa eksekusi order langsung — hanya analisa dan edukasi
+- Kalau tidak ada data cukup, katakan terus terang
+- Jangan over-confident — pasar selalu punya risiko"""
+
+def _build_market_context() -> str:
+    """Bangun snapshot kondisi pasar saat ini dari state bot."""
+    now   = now_wita()
+    price = state.get("prev_price") or 0
+    sess_map = {"asia":"🌏 Asia","pre":"⏳ Pre-London","london":"🇬🇧 London","ny":"🇺🇸 New York"}
+    sess  = sess_map.get(get_session(), get_session())
+
+    # BOS
+    bos_m15 = state.get("bos_m15")
+    bos_m5  = detect_bos(state["candles"]) if state["candles"] else None
+    bos_m15_str = f"{'📈 BULLISH' if bos_m15=='BULL' else '📉 BEARISH'} ({state['bos_m15_time'].strftime('%H:%M') if state.get('bos_m15_time') else '?'})" if bos_m15 else "⏳ Belum ada"
+    bos_m5_str  = f"{'📈 BULLISH' if bos_m5=='BULL' else '📉 BEARISH'}" if bos_m5 else "⏳ Belum ada"
+
+    # Asia Range & Fib
+    asia_lo = state.get("asia_lo"); asia_hi = state.get("asia_hi")
+    asia_str = f"Low ${asia_lo:.2f} | High ${asia_hi:.2f} | Range {asia_hi-asia_lo:.1f} pts" if asia_lo and asia_hi else "Belum terbentuk"
+    fib = state.get("fib")
+    fib_str = f"61.8% = ${fib['f618']:.2f} | 38.2% = ${fib['f382']:.2f}" if fib else "Belum ada"
+
+    # Pivot
+    pivot = get_pivot_from_candles(state["candles"]) if len(state["candles"]) >= 288 else None
+    if pivot:
+        pivot_str = f"P=${pivot['pivot']:.2f} | R1=${pivot['r1']:.2f} | R2=${pivot['r2']:.2f} | S1=${pivot['s1']:.2f} | S2=${pivot['s2']:.2f}"
+        piv_sig = get_pivot_signal(price, pivot)
+        pivot_signal_str = f"{piv_sig['emoji']} {piv_sig['signal']}" if piv_sig else ""
+    else:
+        pivot_str = "Data belum cukup"; pivot_signal_str = ""
+
+    # MTF quick summary
+    mtf_str = ""
+    if len(state["candles"]) >= 300:
+        tfs = [("M15",15),("H1",60),("H4",240)]
+        for tf_name, tf_min in tfs:
+            tf_c = build_tf_candles(state["candles"][-min(2000,len(state["candles"])):], tf_min)
+            if len(tf_c) >= 15:
+                r = get_tf_bias(tf_c, tf_name)
+                mtf_str += f"  {tf_name}: {r['bias']} {r['label']} (RSI {r['rsi_label']})\n"
+
+    # Moon & luck
+    moon   = get_moon_phase()
+    impact = get_moon_impact(moon["phase_en"])
+    luck   = get_luck_status()
+
+    # Yield
+    yield_str = ""
+    if state.get("last_yield"):
+        ya = analyze_yield({"yield": state["last_yield"]})
+        yield_str = f"{ya['emoji']} {ya['label']}" if ya else ""
+
+    # Anchor Day
+    anchor_str = ""
+    anchor_sig = state.get("anchor_day_state")
+    if anchor_sig and anchor_sig.get("bias") not in (None, "NONE", ""):
+        anchor_str = (f"Anchor Day Bias: {anchor_sig['bias']} | Zone: {anchor_sig.get('zone','?')} | "
+                      f"Entry: {anchor_sig.get('entry','?')} | SL: {anchor_sig.get('sl','?')} | "
+                      f"Confidence: {anchor_sig.get('confidence','?')}%")
+
+    # Killzone
+    kz = get_current_killzone()
+    kz_str = f"{kz['emoji']} {kz['name']}" if kz else "Di luar killzone"
+
+    day_name = get_day_name()
+
+    return f"""=== KONDISI PASAR REAL-TIME ===
+Waktu      : {now.strftime('%H:%M WITA')} | {day_name}, {now.day} {get_month_name()} {now.year}
+Harga Gold : ${price:.2f}
+Sesi       : {sess}
+Killzone   : {kz_str}
+
+Asia Range : {asia_str}
+Fibonacci  : {fib_str}
+Swept Low  : {'✅ Sudah' if state.get('low_asia_swept') else '❌ Belum'}
+
+BOS M15    : {bos_m15_str}
+BOS M5     : {bos_m5_str}
+Triple Kfm : {'🔥 YA — M15+M5 SEARAH' if bos_m15 and bos_m5 and bos_m15[0]==bos_m5[0] else '⏳ Belum'}
+
+Pivot      : {pivot_str}
+Piv Signal : {pivot_signal_str}
+
+MTF Bias   :
+{mtf_str if mtf_str else '  (Data belum cukup)'}
+US 10Y     : {yield_str or 'Data belum tersedia'}
+Anchor Day : {anchor_str or 'Tidak ada setup aktif'}
+
+Fase Bulan : {moon['phase']} ({moon['illumination']}%) | {impact['bias']}
+Luck Hari  : {luck['emoji']} {luck['label']}
+================================="""
+
+def ask_gold_ai(user_text: str, chat_id: str) -> str:
+    """
+    Kirim pertanyaan ke Claude AI dengan konteks pasar real-time
+    dan riwayat percakapan. Return teks jawaban.
+    """
+    if not ANTHROPIC_KEY:
+        return "⚠️ ANTHROPIC_API_KEY belum diset. Tambahkan di environment variable Railway."
+
+    # Init history untuk chat_id ini
+    if chat_id not in _ai_history:
+        _ai_history[chat_id] = []
+
+    history = _ai_history[chat_id]
+
+    # Bangun konteks pasar segar — disisipkan sebagai user message pertama
+    market_ctx = _build_market_context()
+
+    # Susun messages: inject konteks ke pesan user terbaru
+    messages = list(history)   # copy
+    messages.append({
+        "role": "user",
+        "content": f"{market_ctx}\n\n--- PERTANYAAN USER ---\n{user_text}"
+    })
+
+    try:
+        r = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": ANTHROPIC_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 700,
+                "system": AI_SYSTEM_PROMPT,
+                "messages": messages,
+            },
+            timeout=25,
+        )
+        data = r.json()
+
+        if r.status_code != 200:
+            err = data.get("error", {}).get("message", "Unknown error")
+            print(f"[AI AGENT] API error {r.status_code}: {err}")
+            return f"⚠️ AI error: {err[:100]}"
+
+        answer = data["content"][0]["text"]
+
+        # Simpan ke history (tanpa konteks pasar — terlalu panjang)
+        history.append({"role": "user",      "content": user_text})
+        history.append({"role": "assistant", "content": answer})
+
+        # Batasi history 12 pesan (6 putaran)
+        if len(history) > 12:
+            _ai_history[chat_id] = history[-12:]
+
+        return answer
+
+    except requests.Timeout:
+        return "⏳ AI timeout — coba lagi sebentar."
+    except Exception as e:
+        print(f"[AI AGENT] Exception: {e}")
+        return f"⚠️ Terjadi error: {str(e)[:80]}"
+
+def send_typing(chat_id=None):
+    """Kirim 'typing...' indicator ke Telegram."""
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendChatAction",
+            json={"chat_id": chat_id or CHAT_ID, "action": "typing"},
+            timeout=5,
+        )
+    except:
+        pass
+
 
 # ── Main ──────────────────────────────────────────────────
 def main():
     print("="*50)
-    print("  XAUUSD Bot v16 — Anchor Day Edition")
-    print("  Anchor Day Rabu 21:30 | Reminder Kamis 08:05")
+    print("  XAUUSD Bot v17 — GoldAI Edition")
+    print("  AI Agent aktif | Anchor Day | MTF")
     print("="*50)
     moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
     send_telegram(
-        f"🚀 *XAUUSD Bot v16 — Anchor Day Edition!*\n━━━━━━━━━━━━━━\n"
+        f"🚀 *XAUUSD Bot v17 — GoldAI Edition!*\n━━━━━━━━━━━━━━\n"
         f"📡 gold-api.com | 📊 M5 | 🕐 WITA\n\n"
-        f"*Fitur:*\n"
+        f"*Fitur Baru:*\n"
+        f"🤖 *GoldAI* — Langsung tanya soal trading!\n"
+        f"   Ketik pertanyaan bebas → AI jawab\n"
+        f"   Tahu kondisi pasar real-time\n\n"
+        f"*Fitur Lama:*\n"
         f"🗓️ Anchor Day Analysis (Rabu 21:30 WITA)\n"
         f"⏰ Entry Reminder (Kamis 08:05 WITA)\n"
-        f"⏰ Killzone Alert otomatis (WITA)\n"
-        f"📊 BOS M15 (utama) + M5 filter\n"
-        f"📰 AI News Analysis otomatis\n"
-        f"📐 Pivot Point R1/R2/R3 + S1/S2/S3\n"
-        f"📊 MTF Analysis setiap 4 jam\n"
-        f"🌪️ Perfect Storm detection\n"
-        f"🌅 Daily briefing: *08:00 WITA*\n\n"
+        f"⏰ Killzone Alert otomatis\n"
+        f"📊 BOS M15 + MTF Analysis\n"
+        f"📰 AI News + Pivot + Yield\n\n"
         f"⏰ *Jadwal Otomatis:*\n"
         f"08:00 Morning briefing\n"
-        f"08:30 Economic calendar\n"
-        f"09:00 AI news analysis\n"
-        f"09:05 Pivot points\n"
         f"08:05 Kamis: Anchor Day reminder\n"
+        f"08:30 Economic calendar\n"
+        f"09:00 AI news | 09:05 Pivot\n"
         f"16:00 Afternoon news\n"
-        f"19:00 US 10Y yield update\n"
+        f"19:00 US 10Y yield\n"
         f"21:30 Rabu: Anchor Day analysis\n\n"
         f"🌙 {moon['phase']} | {impact['bias']}\n━━━━━━━━━━━━━━\n"
-        f"/anchorday untuk analysis sekarang!\n"
-        f"/kamis untuk cek setup Kamis!\n"
+        f"💬 Langsung ketik pertanyaan untuk tanya GoldAI!\n"
         f"🕐 {now_wita().strftime('%d %b %Y %H:%M')} WITA"
     )
 
