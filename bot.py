@@ -125,6 +125,7 @@ def send_yield_alert(analysis, is_new=False):
 
 # ── 📰 NEWS & ECONOMIC CALENDAR ──────────────────────
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+GEMINI_KEY    = os.environ.get("GEMINI_API_KEY", "")
 
 ECONOMIC_EVENTS = {}
 
@@ -1669,10 +1670,11 @@ def handle_commands():
 
         # ── 🤖 AI AGENT COMMANDS ─────────────────────────────────────────────
         elif text == "/tanya":
+            ai_engine = "🟢 Gemini (gratis)" if GEMINI_KEY else "🔵 Claude Anthropic" if ANTHROPIC_KEY else "⚠️ Belum aktif"
             send_telegram(
                 f"🤖 *GOLDAI — Gold Trading Expert*\n━━━━━━━━━━━━━━\n\n"
-                f"Halo! Saya GoldAI, asisten trading XAUUSD Anda.\n\n"
-                f"Langsung ketik pertanyaan — tidak perlu prefix /tanya.\n\n"
+                f"🔧 Engine: {ai_engine}\n\n"
+                f"Langsung ketik pertanyaan — tidak perlu prefix!\n\n"
                 f"*Contoh pertanyaan:*\n"
                 f"• _Apakah sekarang bagus untuk entry BUY?_\n"
                 f"• _Jelaskan kondisi BOS M15 saat ini_\n"
@@ -1681,7 +1683,7 @@ def handle_commands():
                 f"• _Cara entry di Anchor Day yang benar?_\n"
                 f"• _Berapa SL dan TP yang ideal sekarang?_\n\n"
                 f"━━━━━━━━━━━━━━\n"
-                f"💡 Saya tahu kondisi pasar real-time:\n"
+                f"💡 GoldAI tahu kondisi pasar real-time:\n"
                 f"harga, BOS, Asia Range, Fib, Pivot, Yield, MTF\n\n"
                 f"/resetai → hapus riwayat percakapan\n"
                 f"⚠️ _Bukan saran investasi_"
@@ -1698,10 +1700,11 @@ def handle_commands():
         # ── FREE-TEXT → GOLDAI ───────────────────────────────────────────────
         # Semua teks yang bukan /command → dikirim ke GoldAI
         elif not text.startswith("/"):
-            if not ANTHROPIC_KEY:
+            if not GEMINI_KEY and not ANTHROPIC_KEY:
                 send_telegram(
                     "⚠️ *GoldAI belum aktif*\n\n"
-                    "Set `ANTHROPIC_API_KEY` di Railway environment variables."
+                    "Tambahkan `GEMINI_API_KEY` di Railway.\n"
+                    "Cara dapat key gratis: aistudio.google.com"
                 )
                 continue
             chat_id_str = str(upd.get("message", {}).get("chat", {}).get("id", CHAT_ID))
@@ -1862,28 +1865,102 @@ Luck Hari  : {luck['emoji']} {luck['label']}
 
 def ask_gold_ai(user_text: str, chat_id: str) -> str:
     """
-    Kirim pertanyaan ke Claude AI dengan konteks pasar real-time
-    dan riwayat percakapan. Return teks jawaban.
+    Kirim pertanyaan ke GoldAI.
+    Prioritas: Gemini (gratis) → Anthropic (fallback).
     """
-    if not ANTHROPIC_KEY:
-        return "⚠️ ANTHROPIC_API_KEY belum diset. Tambahkan di environment variable Railway."
+    if not GEMINI_KEY and not ANTHROPIC_KEY:
+        return (
+            "⚠️ *GoldAI belum aktif*\n\n"
+            "Tambahkan `GEMINI_API_KEY` di Railway:\n"
+            "1. Buka aistudio.google.com\n"
+            "2. Login Google → Get API Key\n"
+            "3. Paste ke Railway environment variables"
+        )
 
-    # Init history untuk chat_id ini
+    # Init history
     if chat_id not in _ai_history:
         _ai_history[chat_id] = []
-
     history = _ai_history[chat_id]
 
-    # Bangun konteks pasar segar — disisipkan sebagai user message pertama
     market_ctx = _build_market_context()
 
-    # Susun messages: inject konteks ke pesan user terbaru
-    messages = list(history)   # copy
+    # ── GEMINI (utama, gratis) ───────────────────────────────────────────────
+    if GEMINI_KEY:
+        # Gemini pakai role "user" dan "model"
+        contents = []
+        for msg in history[-10:]:
+            gemini_role = "model" if msg["role"] == "assistant" else "user"
+            contents.append({"role": gemini_role, "parts": [{"text": msg["content"]}]})
+
+        # Pesan user terbaru dengan konteks pasar
+        contents.append({
+            "role": "user",
+            "parts": [{"text": f"{market_ctx}\n\n--- PERTANYAAN ---\n{user_text}"}]
+        })
+
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-2.0-flash:generateContent?key={GEMINI_KEY}",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "system_instruction": {
+                        "parts": [{"text": AI_SYSTEM_PROMPT}]
+                    },
+                    "contents": contents,
+                    "generationConfig": {
+                        "maxOutputTokens": 700,
+                        "temperature": 0.7,
+                    },
+                },
+                timeout=25,
+            )
+            data = r.json()
+
+            if r.status_code != 200:
+                err = data.get("error", {}).get("message", "Unknown error")
+                print(f"[GOLDAI/Gemini] Error {r.status_code}: {err}")
+                # Coba fallback ke Anthropic kalau ada
+                if ANTHROPIC_KEY:
+                    print("[GOLDAI] Fallback ke Anthropic...")
+                    return _ask_anthropic(user_text, chat_id, market_ctx, history)
+                return f"⚠️ Gemini error: {err[:100]}"
+
+            # Ambil jawaban
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return "⚠️ Gemini tidak memberikan jawaban. Coba lagi."
+
+            answer = candidates[0]["content"]["parts"][0]["text"]
+
+            # Simpan history
+            history.append({"role": "user",      "content": user_text})
+            history.append({"role": "assistant",  "content": answer})
+            if len(history) > 12:
+                _ai_history[chat_id] = history[-12:]
+
+            print(f"[GOLDAI/Gemini] OK — {len(answer)} chars")
+            return answer
+
+        except requests.Timeout:
+            return "⏳ Gemini timeout — coba lagi sebentar."
+        except Exception as e:
+            print(f"[GOLDAI/Gemini] Exception: {e}")
+            if ANTHROPIC_KEY:
+                return _ask_anthropic(user_text, chat_id, market_ctx, history)
+            return f"⚠️ Error: {str(e)[:80]}"
+
+    # ── ANTHROPIC (fallback kalau Gemini tidak ada) ──────────────────────────
+    return _ask_anthropic(user_text, chat_id, market_ctx, history)
+
+
+def _ask_anthropic(user_text: str, chat_id: str, market_ctx: str, history: list) -> str:
+    """Fallback ke Anthropic Claude jika Gemini tidak tersedia."""
+    messages = list(history)
     messages.append({
         "role": "user",
-        "content": f"{market_ctx}\n\n--- PERTANYAAN USER ---\n{user_text}"
+        "content": f"{market_ctx}\n\n--- PERTANYAAN ---\n{user_text}"
     })
-
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -1901,29 +1978,20 @@ def ask_gold_ai(user_text: str, chat_id: str) -> str:
             timeout=25,
         )
         data = r.json()
-
         if r.status_code != 200:
             err = data.get("error", {}).get("message", "Unknown error")
-            print(f"[AI AGENT] API error {r.status_code}: {err}")
             return f"⚠️ AI error: {err[:100]}"
-
         answer = data["content"][0]["text"]
-
-        # Simpan ke history (tanpa konteks pasar — terlalu panjang)
         history.append({"role": "user",      "content": user_text})
-        history.append({"role": "assistant", "content": answer})
-
-        # Batasi history 12 pesan (6 putaran)
+        history.append({"role": "assistant",  "content": answer})
         if len(history) > 12:
             _ai_history[chat_id] = history[-12:]
-
+        print(f"[GOLDAI/Anthropic] OK — {len(answer)} chars")
         return answer
-
     except requests.Timeout:
         return "⏳ AI timeout — coba lagi sebentar."
     except Exception as e:
-        print(f"[AI AGENT] Exception: {e}")
-        return f"⚠️ Terjadi error: {str(e)[:80]}"
+        return f"⚠️ Error: {str(e)[:80]}"
 
 def send_typing(chat_id=None):
     """Kirim 'typing...' indicator ke Telegram."""
