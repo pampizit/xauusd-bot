@@ -568,11 +568,31 @@ def get_updates(offset=None):
         return []
 
 def fetch_price():
+    """
+    Ambil harga XAUUSD dari Binance (XAUUSDT).
+    Tidak butuh API key — endpoint publik.
+    Fallback ke gold-api.com jika Binance gagal.
+    """
+    # ── Binance (utama) ──────────────────────────────────────────────────────
     try:
-        r = requests.get("https://api.gold-api.com/price/XAU", timeout=10)
+        r = requests.get(
+            "https://api.binance.com/api/v3/ticker/price",
+            params={"symbol": "XAUUSDT"},
+            timeout=8,
+        )
+        data = r.json()
+        price = float(data["price"])
+        if price > 100:          # sanity check — gold tidak mungkin < $100
+            return price
+    except Exception as e:
+        print(f"[PRICE/Binance] {e}")
+
+    # ── Fallback: gold-api.com ───────────────────────────────────────────────
+    try:
+        r = requests.get("https://api.gold-api.com/price/XAU", timeout=8)
         return float(r.json()["price"])
     except Exception as e:
-        print(f"[PRICE ERROR] {e}")
+        print(f"[PRICE/gold-api] {e}")
         return None
 
 def analyze_candle(candles):
@@ -1442,7 +1462,7 @@ def handle_commands():
                 f"🌅 Daily: *08:00 WITA*\n"
                 f"🗓️ Anchor Day: *Rabu 21:30 WITA* (otomatis)\n"
                 f"⏰ Entry Reminder: *Kamis 08:05 WITA* (otomatis)\n"
-                f"━━━━━━━━━━━━━━\nBot aktif 24 jam • gold-api.com"
+                f"━━━━━━━━━━━━━━\nBot aktif 24 jam • Binance XAUUSDT"
             )
 
         elif text=="/anchorday":
@@ -2014,7 +2034,7 @@ def main():
     moon=get_moon_phase(); impact=get_moon_impact(moon["phase_en"])
     send_telegram(
         f"🚀 *XAUUSD Bot v17 — GoldAI Edition!*\n━━━━━━━━━━━━━━\n"
-        f"📡 gold-api.com | 📊 M5 | 🕐 WITA\n\n"
+        f"📡 Binance XAUUSDT | 📊 M5 | 🕐 WITA\n\n"
         f"*Fitur Baru:*\n"
         f"🤖 *GoldAI* — Langsung tanya soal trading!\n"
         f"   Ketik pertanyaan bebas → AI jawab\n"
